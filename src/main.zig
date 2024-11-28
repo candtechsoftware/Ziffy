@@ -26,6 +26,5 @@ const GifHeader = extern struct {
 pub fn main() !void {
     const gif_data = @embedFile("assets/spider-man.gif");
     const header = std.mem.bytesAsValue(GifHeader, gif_data);
-    std.debug.print("intCastata: {any} type: {s}\n", .{ header, header.signature });
-    std.debug.print("packed: {b} global: {any} color_per_pixel {d}\n size of color table {d} ", .{ header.packed_field, header.is_global_color_tag_set(), header.color_per_pixel(), header.get_size_of_color_table() });
+    _ = header;
 }
