@@ -1,6 +1,9 @@
 const std = @import("std");
 
-const Color = packed struct(u24) { color_in_hex: u24 };
+const ParserError = error{
+    TagError,
+    VersionError,
+};
 
 const LogicalDescriptorFlags = packed struct {
     global_color_table_size: u3 = 0,
@@ -15,21 +18,6 @@ const LogicalDescriptor = extern struct {
     flags: LogicalDescriptorFlags align(1) = .{},
     background_color_index: u8 align(1) = 0,
     pixel_aspect_ratio: u8 align(1) = 0,
-
-    fn is_global_color_tag_set(self: LogicalDescriptor) bool {
-        return (self.packed_field & 1) != 0;
-    }
-
-    fn color_per_pixel(self: LogicalDescriptor) u8 {
-        return @as(u8, (self.packed_field >> 4) & 0b0111) + 1; // shift to the right and mask last 3bits
-    }
-
-    fn get_size_of_color_table(self: LogicalDescriptor) usize {
-        const n = self.packed_field & 0b00000111;
-        const color_count = std.math.pow(usize, 2, n + 1); // 2 ^ (n + 1)
-        const size = @bitSizeOf(u24) / 8;
-        return size * color_count;
-    }
 };
 
 const Header = extern struct {
@@ -43,10 +31,36 @@ const VERSIONS = [_][]const u8{
     "89a",
 };
 
+const ColorTableShiftSize = if (@sizeOf(usize) == 4) u5 else u6;
+
+fn Color(comptime T: type) type {
+    return extern struct {
+        r: T align(1),
+        g: T align(1),
+        b: T align(1),
+    };
+}
+
+pub const Rgb24 = Color(u8);
+
+fn FixedArray(comptime T: type, comptime storage_size: usize) type {
+    return struct {
+        data: []T = &.{},
+        storage: [storage_size]T = undefined,
+
+        const Self = @This();
+
+        pub fn resize(self: *Self, size: usize) void {
+            self.data = self.storage[0..size];
+        }
+    };
+}
+
 const GifParser = struct {
     header: Header = .{},
     logical_descriptor: LogicalDescriptor = .{},
     allocator: std.mem.Allocator = undefined,
+    global_color_table: FixedArray(Rgb24, 256) = .{},
     data: []const u8,
 
     pub fn init(allocator: std.mem.Allocator, data: []const u8) GifParser {
@@ -61,10 +75,41 @@ const GifParser = struct {
         _ = self;
     }
 
-    pub fn parse(self: *GifParser) void {
+    pub fn parse(self: *GifParser) ParserError!void {
         var cursor: usize = @sizeOf(Header);
         self.header = std.mem.bytesToValue(Header, self.data[0..cursor]);
+        if (!std.mem.eql(u8, self.header.tag[0..], TAG)) {
+            return ParserError.TagError;
+        }
+
+        var valid_version = false;
+
+        for (VERSIONS) |v| {
+            if (std.mem.eql(u8, self.header.version[0..], v)) {
+                valid_version = true;
+            }
+        }
+
+        if (!valid_version) {
+            return ParserError.VersionError;
+        }
+
         self.logical_descriptor = std.mem.bytesToValue(LogicalDescriptor, self.data[cursor..@sizeOf(LogicalDescriptor)]);
+
+        const global_color_table_size = @as(usize, 1) << (@as(ColorTableShiftSize, @intCast(self.logical_descriptor.flags.global_color_table_size)) + 1);
+        self.global_color_table.resize(global_color_table_size);
+
+        if (self.logical_descriptor.flags.use_global_color_table) {
+            var idx: usize = 0;
+
+            while (idx < global_color_table_size) : (idx += 1) {
+                self.global_color_table.data[idx] = std.mem.bytesToValue(Rgb24, self.data[cursor .. cursor + 2]);
+                cursor += 2;
+            }
+        }
+
+
+
         cursor += @sizeOf(LogicalDescriptor);
     }
 };
@@ -74,5 +119,5 @@ pub fn main() !void {
     const data = @embedFile("assets/spider-man.gif");
     const alloc = gpa.allocator();
     var parser = GifParser.init(alloc, data);
-    parser.parse();
+    try parser.parse();
 }

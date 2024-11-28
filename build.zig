@@ -6,11 +6,10 @@ pub fn build(b: *std.Build) !void {
 
     const exe = b.addExecutable(.{
         .name = "ws_server",
-        .root_source_file =  b.path("src/main.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .optimize = opts,
-        .target =  target,
+        .target = target,
     });
-    std.debug.print("build {any}", .{b.args});
 
     b.installArtifact(exe);
 }
