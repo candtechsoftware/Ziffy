@@ -95,6 +95,7 @@ const GifParser = struct {
         }
 
         self.logical_descriptor = std.mem.bytesToValue(LogicalDescriptor, self.data[cursor..@sizeOf(LogicalDescriptor)]);
+        cursor += @sizeOf(LogicalDescriptor);
 
         const global_color_table_size = @as(usize, 1) << (@as(ColorTableShiftSize, @intCast(self.logical_descriptor.flags.global_color_table_size)) + 1);
         self.global_color_table.resize(global_color_table_size);
@@ -104,13 +105,17 @@ const GifParser = struct {
 
             while (idx < global_color_table_size) : (idx += 1) {
                 self.global_color_table.data[idx] = std.mem.bytesToValue(Rgb24, self.data[cursor .. cursor + 2]);
+                std.debug.print("Color: {any} \n", .{self.global_color_table.data[idx]});
                 cursor += 2;
             }
         }
 
 
+    }
 
-        cursor += @sizeOf(LogicalDescriptor);
+    fn read_data(self: *GifParser, cursor: usize) !void {
+        _ = self;
+        _ = cursor;
     }
 };
 
